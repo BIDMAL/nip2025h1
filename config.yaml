@@ -1,0 +1,13 @@
+local_path: "./data/"
+remote_sources:
+  - "http://repo.postgrespro.ru/doc//sdm/14.17.1/ru/"
+remote_filenames:
+  - "shardman.epub"
+bge_host: "http://localhost:8004"
+db_params:
+  host: "localhost"
+  dbname : "docs"
+  user: "postgres"
+  password: "123456"
+  port: "5432"
+version: "_v0"
