@@ -62,12 +62,57 @@ def prepare_tables(config):
 
 def get_clear_docs(config):
     clear_docs = []
-    # TODO: parse document
+    
+    file = epub.read_epub('./data/shardman.epub')
+    
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=config.get('chunk_size', 1000),
+        chunk_overlap=config.get('chunk_overlap', 200),
+        length_function=len
+    )
+    
+    for item in file.get_items():
+        if item.get_type() == ebooklib.ITEM_DOCUMENT:
+            soup = BeautifulSoup(item.get_content(), 'html.parser')
+            
+            for sect in soup.find_all('div', class_='sect1'):
+                title = sect.find('h2').get_text() if sect.find('h2') else 'No title'
+                text = sect.get_text()
+                
+                chunks = text_splitter.split_text(text)
+                
+                for i, chunk in enumerate(chunks):
+                    clear_docs.append({
+                        'doc_id': i,
+                        'uri': f"{item.get_name()}#{i}",
+                        'title': title,
+                        'text': chunk,
+                        'dense': None
+                    })
+    
     return clear_docs
 
 def fill_clear_docs(docs, doc_table, config):
-    # TODO: fill parsed chunks
-    pass
+    connection = psycopg.connect(**config["db_params"])
+    cursor = connection.cursor()
+    
+    try:
+        with cursor.copy(f'COPY "{doc_table}" (doc_id, uri, title, text, dense) FROM STDIN') as copy:
+            for doc_id, doc in enumerate(tqdm(docs, desc="Inserting documents")):
+                copy.write_row((
+                    doc['doc_id'],
+                    doc['uri'],
+                    doc['title'],
+                    doc['text'],
+                    doc['dense']
+                ))
+        connection.commit()
+    except Exception as e:
+        connection.rollback()
+        raise e
+    finally:
+        cursor.close()
+        connection.close()
 
 if __name__ == "__main__":
     config = load_config('config.yaml')
