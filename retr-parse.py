@@ -15,6 +15,24 @@ from multiprocessing import Pool
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 
+class BGEInteractor:
+    def __init__(self, url):
+        self.url = url
+
+    def fetch_embeddings(self, queries):
+        body = {"queries": queries}
+        with httpx.Client(timeout=10000) as client:
+            response = client.post(f"{self.url}/fetch_embeddings", json=body)
+            response = response.json()
+            return response["model_length"], response["data"]
+
+    async def afetch_embeddings(self, queries):
+        body = {"queries": queries}
+        async with httpx.AsyncClient(timeout=10000) as client:
+            response = await client.post(f"{self.url}/fetch_embeddings", json=body)
+            response = response.json()
+            return response["model_length"], response["data"]
+
 def load_config(config_file):
     config = None
 
@@ -37,7 +55,7 @@ def prepare_tables(config):
     cursor.execute(f"""DROP TABLE IF EXISTS "{cd_table}" CASCADE;""")
     sql = f"""
         CREATE TABLE IF NOT EXISTS "{cd_table}" (
-            "doc_id" INTEGER NOT NULL,
+            "doc_id" SERIAL NOT NULL,
             "uri" TEXT NOT NULL,
             "title" TEXT NULL DEFAULT NULL,
             "text" TEXT NULL DEFAULT NULL,
@@ -60,35 +78,54 @@ def prepare_tables(config):
 
     return tables
 
+def clear_text(text):
+    clean_text = re.sub(r"\n{3,}", "\n\n", text) # "\n\n\n..."" -> "\n\n"
+    clean_text = re.sub("(?<!\n)\n(?!\n)", " ", clean_text) # \n -> " "
+    clean_text = re.sub(" +", " ", clean_text) # " ..." -> " "
+    clean_text = clean_text.replace("\xa0", " ")
+    return clean_text.strip()
+
+base_url = 'https://postgrespro.ru/docs/postgrespro/17/'
+bge_interacrtor = BGEInteractor(url='http://0.0.0.0:8004')
+
+def rec_sects_processing(cur_sect, deep=1, prefix=''):
+    clear_docs = []
+    for sect in cur_sect.find_all('div', class_=f'sect{deep}'):
+        id = sect.find('a')['id']
+
+        clear_docs += rec_sects_processing(sect, deep + 1, prefix + ('#' if deep > 1 else '') + id)
+
+        title = sect.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']).get_text()
+        text = sect.get_text()
+        text = clear_text(text)
+
+        _, emb = bge_interacrtor.fetch_embeddings([text])
+        clear_docs.append({
+                    'doc_id': None,
+                    'uri': base_url + prefix + ('#' if deep > 1 else '') + (id.upper() if deep > 1 else id),
+                    'title': title,
+                    'text': text,
+                    'dense': emb[0]['dense']
+                })
+    
+    return clear_docs
+
 def get_clear_docs(config):
     clear_docs = []
+
+    file = epub.read_epub('./data/17.4-ru.epub')
     
-    file = epub.read_epub('./data/shardman.epub')
+    # text_splitter = RecursiveCharacterTextSplitter(
+    #     chunk_size=config.get('chunk_size', 1000),
+    #     chunk_overlap=config.get('chunk_overlap', 200),
+    #     length_function=len
+    # )
     
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=config.get('chunk_size', 1000),
-        chunk_overlap=config.get('chunk_overlap', 200),
-        length_function=len
-    )
-    
-    for item in file.get_items():
+    items = list(file.get_items())
+    for item in tqdm(items, desc='Process data and embedding texts'):
         if item.get_type() == ebooklib.ITEM_DOCUMENT:
             soup = BeautifulSoup(item.get_content(), 'html.parser')
-            
-            for sect in soup.find_all('div', class_='sect1'):
-                title = sect.find('h2').get_text() if sect.find('h2') else 'No title'
-                text = sect.get_text()
-                
-                chunks = text_splitter.split_text(text)
-                
-                for i, chunk in enumerate(chunks):
-                    clear_docs.append({
-                        'doc_id': i,
-                        'uri': f"{item.get_name()}#{i}",
-                        'title': title,
-                        'text': chunk,
-                        'dense': None
-                    })
+            clear_docs += rec_sects_processing(soup)
     
     return clear_docs
 
@@ -97,16 +134,17 @@ def fill_clear_docs(docs, doc_table, config):
     cursor = connection.cursor()
     
     try:
-        with cursor.copy(f'COPY "{doc_table}" (doc_id, uri, title, text, dense) FROM STDIN') as copy:
-            for doc_id, doc in enumerate(tqdm(docs, desc="Inserting documents")):
-                copy.write_row((
-                    doc['doc_id'],
-                    doc['uri'],
-                    doc['title'],
-                    doc['text'],
-                    doc['dense']
-                ))
-        connection.commit()
+        for i, doc in tqdm(enumerate(docs), desc="Inserting documents"):
+            dense_str = '[' + ','.join(map(str, doc['dense'])) + ']'
+            args = (i, doc['uri'], doc['title'], doc['text'], dense_str)
+            cursor.execute(
+                f"""INSERT INTO "{doc_table}" 
+                    (doc_id, uri, title, text, dense) 
+                    VALUES (%s, %s, %s, %s, %s)""",
+                args
+            )
+
+            connection.commit()
     except Exception as e:
         connection.rollback()
         raise e
@@ -118,4 +156,9 @@ if __name__ == "__main__":
     config = load_config('config.yaml')
     tables = prepare_tables(config)
     clear_docs = get_clear_docs(config)
+    # import pickle
+    # with open('clear_docs.pkl', 'wb') as f:
+    #     pickle.dump(clear_docs, f)
+    # with open('clear_docs.pkl', 'rb') as f:
+    #     clear_docs = pickle.load(f)
     fill_clear_docs(clear_docs, tables[0], config)
