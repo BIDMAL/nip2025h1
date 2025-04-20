@@ -93,7 +93,7 @@ def rec_sects_processing(cur_sect, deep=1, prefix=''):
     for sect in cur_sect.find_all('div', class_=f'sect{deep}'):
         id = sect.find('a')['id']
 
-        clear_docs += rec_sects_processing(sect, deep + 1, prefix + ('#' if deep > 1 else '') + id)
+        clear_docs += rec_sects_processing(sect, deep + 1, prefix + ('#' if deep > 1 else '') + (id.upper() if deep > 1 else id))
 
         title = sect.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']).get_text()
         text = sect.get_text()
