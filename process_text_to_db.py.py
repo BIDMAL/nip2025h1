@@ -88,9 +88,11 @@ def clear_text(text):
 base_url = 'https://postgrespro.ru/docs/postgrespro/17/'
 bge_interacrtor = BGEInteractor(url='http://0.0.0.0:8004')
 
-def rec_sects_processing(cur_sect, deep=1, prefix=''):
+def rec_sects_processing(src_sect, dist_sects_data, deep=1, prefix=''): 
+    ''' Recursive function to retrieve data from section. '''
+    
     clear_docs = []
-    for sect in cur_sect.find_all('div', class_=f'sect{deep}'):
+    for sect in src_sect.find_all('div', class_=f'sect{deep}'):
         id = sect.find('a')['id']
 
         clear_docs += rec_sects_processing(sect, deep + 1, prefix + ('#' if deep > 1 else '') + (id.upper() if deep > 1 else id))
@@ -99,21 +101,19 @@ def rec_sects_processing(cur_sect, deep=1, prefix=''):
         text = sect.get_text()
         text = clear_text(text)
 
-        _, emb = bge_interacrtor.fetch_embeddings([text])
-        clear_docs.append({
-                    'doc_id': None,
-                    'uri': base_url + prefix + ('#' if deep > 1 else '') + (id.upper() if deep > 1 else id),
-                    'title': title,
-                    'text': text,
-                    'dense': emb[0]['dense']
-                })
-    
-    return clear_docs
+        dist_sects_data.append(dict(
+            title = title,
+            text = text,
+            id = id,
+            uri = base_url + prefix + ('#' if deep > 1 else '') + (id.upper() if deep > 1 else id)
+        )) 
 
-def get_clear_docs(config):
-    clear_docs = []
-
+def get_new_corteges(config):
+    ''' Gets corteges for database. '''
     file = epub.read_epub('./data/17.4-ru.epub')
+   
+    db_corteges = [] # array of data extracted from sections + embeddindgs for section's text 
+    sects_data = [] # contains [text, title, uri, etc] for each section
     
     # text_splitter = RecursiveCharacterTextSplitter(
     #     chunk_size=config.get('chunk_size', 1000),
@@ -125,20 +125,31 @@ def get_clear_docs(config):
     for item in tqdm(items, desc='Process data and embedding texts'):
         if item.get_type() == ebooklib.ITEM_DOCUMENT:
             soup = BeautifulSoup(item.get_content(), 'html.parser')
-            clear_docs += rec_sects_processing(soup)
+            db_corteges += rec_sects_processing(soup, sects_data)
     
-    return clear_docs
+    if len(sects_data) > 0:
+        _, embs = bge_interacrtor.fetch_embeddings([sect_data['text'] for sect_data in sects_data])
+        for emb, sect_data in zip(embs, sects_data):
+            db_corteges.append({
+                'doc_id': None,
+                'uri': sect_data['uri'],
+                'title': sect_data['title'],
+                'text': sect_data['text'],
+                'dense': emb['dense']
+            }) 
 
-def fill_clear_docs(docs, doc_table, config):
+    return db_corteges
+
+def fill_db(db_corteges, table, config):
     connection = psycopg.connect(**config["db_params"])
-    cursor = connection.cursor()
+    cursor = connection.cursor() # object to communicate with databse
     
     try:
-        for i, doc in tqdm(enumerate(docs), desc="Inserting documents"):
+        for i, doc in tqdm(enumerate(db_corteges), desc="Inserting documents"):
             dense_str = '[' + ','.join(map(str, doc['dense'])) + ']'
             args = (i, doc['uri'], doc['title'], doc['text'], dense_str)
             cursor.execute(
-                f"""INSERT INTO "{doc_table}" 
+                f"""INSERT INTO "{table}" 
                     (doc_id, uri, title, text, dense) 
                     VALUES (%s, %s, %s, %s, %s)""",
                 args
@@ -155,10 +166,5 @@ def fill_clear_docs(docs, doc_table, config):
 if __name__ == "__main__":
     config = load_config('config.yaml')
     tables = prepare_tables(config)
-    clear_docs = get_clear_docs(config)
-    # import pickle
-    # with open('clear_docs.pkl', 'wb') as f:
-    #     pickle.dump(clear_docs, f)
-    # with open('clear_docs.pkl', 'rb') as f:
-    #     clear_docs = pickle.load(f)
-    fill_clear_docs(clear_docs, tables[0], config)
+    clear_docs = get_new_corteges(config)
+    fill_db(clear_docs, tables[0], config)

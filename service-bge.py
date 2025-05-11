@@ -37,7 +37,9 @@ async def fetch_embeddings(request: EmbeddingsRequest):
 
     return {"success": True, "model_length": len(model.tokenizer), "data": embeddings}
 
-
+# sudo docker stop docs
+# sudo docker rm docs
+# sudo docker run --name docs -p 5432:5432 -e POSTGRES_PASSWORD=123456 nerdspot/pgvecto.rs:pg17-v0.4.0-1
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8004)
