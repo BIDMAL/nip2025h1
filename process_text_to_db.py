@@ -7,12 +7,7 @@ import re
 import yaml
 
 from bs4 import BeautifulSoup
-from copy import copy
-from datetime import datetime
 from ebooklib import epub
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from multiprocessing import Pool
-from sklearn.cluster import KMeans
 from tqdm import tqdm
 
 class BGEInteractor:
@@ -91,11 +86,10 @@ bge_interacrtor = BGEInteractor(url='http://0.0.0.0:8004')
 def rec_sects_processing(src_sect, dist_sects_data, deep=1, prefix=''): 
     ''' Recursive function to retrieve data from section. '''
     
-    clear_docs = []
     for sect in src_sect.find_all('div', class_=f'sect{deep}'):
         id = sect.find('a')['id']
 
-        clear_docs += rec_sects_processing(sect, deep + 1, prefix + ('#' if deep > 1 else '') + (id.upper() if deep > 1 else id))
+        rec_sects_processing(sect, deep + 1, prefix + ('#' if deep > 1 else '') + (id.upper() if deep > 1 else id))
 
         title = sect.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']).get_text()
         text = sect.get_text()
@@ -125,8 +119,8 @@ def get_new_corteges(config):
     for item in tqdm(items, desc='Process data and embedding texts'):
         if item.get_type() == ebooklib.ITEM_DOCUMENT:
             soup = BeautifulSoup(item.get_content(), 'html.parser')
-            db_corteges += rec_sects_processing(soup, sects_data)
-    
+            rec_sects_processing(soup, sects_data)
+
     if len(sects_data) > 0:
         _, embs = bge_interacrtor.fetch_embeddings([sect_data['text'] for sect_data in sects_data])
         for emb, sect_data in zip(embs, sects_data):
@@ -154,7 +148,6 @@ def fill_db(db_corteges, table, config):
                     VALUES (%s, %s, %s, %s, %s)""",
                 args
             )
-
             connection.commit()
     except Exception as e:
         connection.rollback()
@@ -166,5 +159,5 @@ def fill_db(db_corteges, table, config):
 if __name__ == "__main__":
     config = load_config('config.yaml')
     tables = prepare_tables(config)
-    clear_docs = get_new_corteges(config)
-    fill_db(clear_docs, tables[0], config)
+    new_corteges = get_new_corteges(config)
+    fill_db(new_corteges, tables[0], config)
