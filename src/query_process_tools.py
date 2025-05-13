@@ -1,7 +1,6 @@
 import psycopg
 import yaml
-
-from service_bge import BGEInteractor
+from src import intercator_bge as bge
 
 def load_config(config_file):
     config = None
@@ -12,7 +11,7 @@ def load_config(config_file):
 config = load_config('config.yaml')
 connection = psycopg.connect(**config["db_params"])
 cursor = connection.cursor() # object to communicate with databse
-bge_interacrtor = BGEInteractor(url='http://0.0.0.0:8004')
+bge_interacrtor = bge.BGEInteractor(url='http://0.0.0.0:8004')
 
 def get_topk_elems(query, table_name, k=20):
     '''Get db objects from table which are 20 nearest in embedding space entities to query\n

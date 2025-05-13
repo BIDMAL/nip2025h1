@@ -1,32 +1,12 @@
-import ast
 import ebooklib
-import httpx
-import numpy as np
 import psycopg
 import re
 import yaml
 
+from src import intercator_bge as bge
 from bs4 import BeautifulSoup
 from ebooklib import epub
 from tqdm import tqdm
-
-class BGEInteractor:
-    def __init__(self, url):
-        self.url = url
-
-    def fetch_embeddings(self, queries):
-        body = {"queries": queries}
-        with httpx.Client(timeout=10000) as client:
-            response = client.post(f"{self.url}/fetch_embeddings", json=body)
-            response = response.json()
-            return response["model_length"], response["data"]
-
-    async def afetch_embeddings(self, queries):
-        body = {"queries": queries}
-        async with httpx.AsyncClient(timeout=10000) as client:
-            response = await client.post(f"{self.url}/fetch_embeddings", json=body)
-            response = response.json()
-            return response["model_length"], response["data"]
 
 def load_config(config_file):
     config = None
@@ -81,7 +61,7 @@ def clear_text(text):
     return clean_text.strip()
 
 base_url = 'https://postgrespro.ru/docs/postgrespro/17/'
-bge_interacrtor = BGEInteractor(url='http://0.0.0.0:8004')
+bge_interacrtor = bge.BGEInteractor(url='http://0.0.0.0:8004')
 
 def rec_sects_processing(src_sect, dist_sects_data, deep=1, prefix=''): 
     ''' Recursive function to retrieve data from section. '''
@@ -104,7 +84,7 @@ def rec_sects_processing(src_sect, dist_sects_data, deep=1, prefix=''):
 
 def get_new_corteges(config):
     ''' Gets corteges for database. '''
-    file = epub.read_epub('./data/17.4-ru.epub')
+    file = epub.read_epub('data/17.4-ru.epub')
    
     db_corteges = [] # array of data extracted from sections + embeddindgs for section's text 
     sects_data = [] # contains [text, title, uri, etc] for each section
