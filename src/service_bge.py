@@ -10,11 +10,9 @@ model = BGEM3FlagModel("BAAI/bge-m3", use_fp16=True)
 class EmbeddingsRequest(BaseModel):
     queries: list[str]
 
-
 class RerankRequest(BaseModel):
     query: str
     candidates: list[str]
-
 
 def embedding(
     sentences: list[str],
@@ -25,8 +23,6 @@ def embedding(
     sparse_values = [list(map(float, list(el.values()))) for el in output["lexical_weights"]]
     return dense_embedding, sparse_indices, sparse_values
 
-
-
 @app.post("/fetch_embeddings")
 async def fetch_embeddings(request: EmbeddingsRequest):
     dense_embeddings, sparse_indices, sparse_values = embedding(request.queries)
@@ -36,8 +32,6 @@ async def fetch_embeddings(request: EmbeddingsRequest):
     ]
 
     return {"success": True, "model_length": len(model.tokenizer), "data": embeddings}
-
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8004)
