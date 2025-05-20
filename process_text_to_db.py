@@ -71,7 +71,7 @@ def rec_sects_processing(src_sect, dist_sects_data, text_splitter, deep=1, prefi
     ''' Recursive function to retrieve data from section. '''
     
     for sect in src_sect.find_all('div', class_=f'sect{deep}'):
-        id = sect.find('a')['id']
+        id = sect.find('a')['id'] 
 
         rec_sects_processing(sect, deep + 1, prefix + ('#' if deep > 1 else '') + (id.upper() if deep > 1 else id))
 

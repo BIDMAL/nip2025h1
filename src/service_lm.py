@@ -7,8 +7,8 @@ import uvicorn
 model_name = "Qwen/Qwen3-1.7B"
 app = FastAPI()
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-# device = 'cpu'
+# device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cpu'
 
 # load the tokenizer and the model
 tokenizer = AutoTokenizer.from_pretrained(model_name)
