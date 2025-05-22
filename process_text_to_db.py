@@ -3,10 +3,14 @@ import psycopg
 import re
 import yaml
 
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from transformers import AutoTokenizer
 from src import intercator_bge as bge
 from bs4 import BeautifulSoup
 from ebooklib import epub
 from tqdm import tqdm
+
+model_name = "Qwen/Qwen3-1.7B"
 
 def load_config(config_file):
     config = None
@@ -63,11 +67,11 @@ def clear_text(text):
 base_url = 'https://postgrespro.ru/docs/postgrespro/17/'
 bge_interacrtor = bge.BGEInteractor(url='http://0.0.0.0:8004')
 
-def rec_sects_processing(src_sect, dist_sects_data, deep=1, prefix=''): 
+def rec_sects_processing(src_sect, dist_sects_data, text_splitter, deep=1, prefix=''): 
     ''' Recursive function to retrieve data from section. '''
     
     for sect in src_sect.find_all('div', class_=f'sect{deep}'):
-        id = sect.find('a')['id']
+        id = sect.find('a')['id'] 
 
         rec_sects_processing(sect, deep + 1, prefix + ('#' if deep > 1 else '') + (id.upper() if deep > 1 else id))
 
@@ -75,12 +79,18 @@ def rec_sects_processing(src_sect, dist_sects_data, deep=1, prefix=''):
         text = sect.get_text()
         text = clear_text(text)
 
-        dist_sects_data.append(dict(
-            title = title,
-            text = text,
-            id = id,
-            uri = base_url + prefix + ('#' if deep > 1 else '') + (id.upper() if deep > 1 else id)
-        )) 
+        text_chunks = text_splitter.split_text(text)
+
+        for i, chunk in enumerate(text_chunks):
+            dist_sects_data.append(dict(
+                title = title,
+                text = chunk,
+                id = id,
+                uri = base_url + prefix + 
+                    ('#' if deep > 1 else '') + 
+                    (id.upper() if deep > 1 else id) +
+                    (f'#{i}' if len(text_chunks) > 1 else '')
+            )) 
 
 def get_new_corteges(config):
     ''' Gets corteges for database. '''
@@ -88,22 +98,29 @@ def get_new_corteges(config):
    
     db_corteges = [] # array of data extracted from sections + embeddindgs for section's text 
     sects_data = [] # contains [text, title, uri, etc] for each section
-    
-    # text_splitter = RecursiveCharacterTextSplitter(
-    #     chunk_size=config.get('chunk_size', 1000),
-    #     chunk_overlap=config.get('chunk_overlap', 200),
-    #     length_function=len
-    # )
-    
+
+    # loading tokenizer and splitter for splitting text into chunks suitable for lm_model
+    tokenizer = AutoTokenizer.from_pretrained(model_name) 
+
+    def tok_len(text):
+        return len(tokenizer.encode(text))
+
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=100,
+        length_function=tok_len
+    )
+
+    # receiving data from ebup
     items = list(file.get_items())
     for item in tqdm(items, desc='Process data and embedding texts'):
         if item.get_type() == ebooklib.ITEM_DOCUMENT:
             soup = BeautifulSoup(item.get_content(), 'html.parser')
-            rec_sects_processing(soup, sects_data)
+            rec_sects_processing(soup, sects_data, text_splitter)
 
     if len(sects_data) > 0:
         _, embs = bge_interacrtor.fetch_embeddings([sect_data['text'] for sect_data in sects_data])
-        for emb, sect_data in zip(embs, sects_data):
+        for emb, sect_data in tqdm(zip(embs, sects_data)):
             db_corteges.append({
                 'doc_id': None,
                 'uri': sect_data['uri'],

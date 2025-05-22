@@ -7,7 +7,8 @@ import uvicorn
 model_name = "Qwen/Qwen3-1.7B"
 app = FastAPI()
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cpu'
 
 # load the tokenizer and the model
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -32,16 +33,18 @@ def generate(args: GenerateArgs):
     '''Request model to generate answer to prompts\n
     Returns thinking_content and content'''
     msgs = [
-        {'role': 'user', 'content': args.prompt},
-        {'role': 'assistant', 'content': args.context}
+        {'role': 'system', 'content': args.context},
+        {'role': 'user', 'content': args.prompt}
     ]
+
     text = tokenizer.apply_chat_template(
         msgs,
         tokenize=False,
         add_generation_prompt=True,
         enable_thinking=True
     )
-    model_inputs = tokenizer([text], return_tensors="pt").to(model.device)  
+
+    model_inputs = tokenizer([text], return_tensors="pt").to(model.device) 
     
     generated_ids = model.generate(
         **model_inputs,

@@ -5,11 +5,7 @@ class LMInteractor:
         self.url = url
         self.history = []
 
-    def get_history(self):
-        ''' Returns prompts histore and optional LM response to them'''
-        return self.history
-
-    def generate(self, prompt, context) -> tuple[list[str], list[str]]:
+    def generate(self, prompt, context) -> tuple[str, str]:
         '''Request model to generate answer to prompts\n
         Returns thinking_content and content'''
         args = {'prompt': prompt, 'context': context}
