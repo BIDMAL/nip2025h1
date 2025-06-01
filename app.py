@@ -7,13 +7,16 @@ from datetime import datetime
 from flask import Flask, request, render_template
 from src import db_query_process_tools as qtools
 from src import interactor_lm as lm
-from src import intercator_bge as bge
+from src import interactor_bge as bge
+from src import interactor_reranker as rerank
 
 def load_config(config_file):
     config = None
     with open(config_file, 'r') as file:
         config = yaml.safe_load(file)
     return config
+
+CONTEXT_CHUNKS_NUM = 3
 
 app = Flask(__name__)
 table_name = 'clear_docs_v0'
@@ -22,6 +25,7 @@ connection = psycopg.connect(**config['db_params'])
 cursor = connection.cursor()
 bge_interacrtor = bge.BGEInteractor(url='http://0.0.0.0:8004')
 lm_interactor = lm.LMInteractor(url='http://0.0.0.0:8005')
+reranker_interactor = rerank.RerankerInteractor('http://0.0.0.0:8007')
 chat_history = []
 
 @app.template_filter('markdown')
@@ -42,23 +46,29 @@ def chat():
             'context': None
         })
 
-        nearest_elem = qtools.get_topk_elems(
+        nearest_elems = qtools.get_topk_elems(
             prompt=prompt, 
             cursor=cursor, 
             connection=connection, 
             table_name=table_name, 
             bge_interactor=bge_interacrtor,
-            k=1
+            k=20
         )
+
+        contexts = [el[3] for el in nearest_elems]
+        top_contexts = reranker_interactor.rerank_contexts(prompt, contexts, CONTEXT_CHUNKS_NUM)
         
-        context = nearest_elem[0][3] if nearest_elem else ''
-        _, response = lm_interactor.generate(prompt, context)
+        combined_context = ''
+        for i, s in enumerate(top_contexts):
+            combined_context += f'source{i}: ' + s + '\n'
+
+        _, response = lm_interactor.generate(prompt, combined_context)
 
         chat_history.append({
             'role': 'bot',
             'content': Markup(markdown.markdown(response)),
             'timestamp': datetime.now().strftime('%H:%M:%S'),
-            'context': context
+            'context': combined_context
         })
     
     return render_template('web_chat.html', chat_history=chat_history)

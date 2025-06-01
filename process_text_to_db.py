@@ -5,7 +5,7 @@ import yaml
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer
-from src import intercator_bge as bge
+from src import interactor_bge as bge
 from bs4 import BeautifulSoup
 from ebooklib import epub
 from tqdm import tqdm

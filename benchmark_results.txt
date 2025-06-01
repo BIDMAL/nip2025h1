@@ -1,0 +1,6 @@
+Accuracy without reranker on top5: 0.9
+Accuracy with reranker on top1: 0.67
+Accuracy with reranker on top2: 0.83
+Accuracy with reranker on top3: 0.88
+Accuracy with reranker on top4: 0.905
+Accuracy with reranker on top5: 0.915
