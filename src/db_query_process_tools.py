@@ -1,4 +1,4 @@
-from src import intercator_bge as bge
+from src import interactor_bge as bge
 
 def get_topk_elems(prompt, table_name, cursor, connection, bge_interactor, k=20):
     '''Get db objects from table which are 20 nearest in embedding space entities to query\n
